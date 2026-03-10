@@ -96,14 +96,38 @@ export function createSocketServer(deps: SocketServerDeps): {
     })
 
     cliNs.use((socket, next) => {
-        const auth = socket.handshake.auth as Record<string, unknown> | undefined
-        const token = typeof auth?.token === 'string' ? auth.token : null
-        const parsedToken = token ? parseAccessToken(token) : null
-        if (!parsedToken || !constantTimeEquals(parsedToken.baseToken, configuration.cliApiToken)) {
-            return next(new Error('Invalid token'))
+        try {
+            const auth = socket.handshake.auth as Record<string, unknown> | undefined
+            const token = typeof auth?.token === 'string' ? auth.token : null
+            
+            console.log(`[Socket Auth] CLI connection attempt, token present: ${!!token}`)
+            
+            if (!token) {
+                console.log('[Socket Auth] No token provided')
+                return next(new Error('Invalid token'))
+            }
+            
+            const parsedToken = parseAccessToken(token)
+            
+            if (!parsedToken) {
+                console.log('[Socket Auth] Failed to parse token')
+                return next(new Error('Invalid token'))
+            }
+            
+            console.log(`[Socket Auth] Parsed token, namespace: ${parsedToken.namespace}`)
+            
+            if (!constantTimeEquals(parsedToken.baseToken, configuration.cliApiToken)) {
+                console.log('[Socket Auth] Token mismatch')
+                return next(new Error('Invalid token'))
+            }
+            
+            socket.data.namespace = parsedToken.namespace
+            console.log(`[Socket Auth] Success, namespace: ${parsedToken.namespace}`)
+            next()
+        } catch (error) {
+            console.error('[Socket Auth] Error in auth middleware:', error)
+            next(new Error('Invalid token'))
         }
-        socket.data.namespace = parsedToken.namespace
-        next()
     })
     cliNs.on('connection', (socket) => registerCliHandlers(socket as CliSocketWithData, {
         io,
